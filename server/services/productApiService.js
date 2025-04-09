@@ -9,15 +9,15 @@ const axios = require("axios");
  * @returns {string} - The constructed model URL.
  */
 function buildModelUrl(model) {
-  // For demonstration, assume a simple pattern.
-  // You might need to adjust the URL pattern based on your actual site structure.
+  // Adjust this URL pattern based on your site's structure.
   return `https://www.partselect.com/models/${model}`;
 }
 
 /**
  * Validate the provided candidate using the model autocomplete API.
  * If matches are found, return a structured response for a model.
- * If no matches are found, assume the candidate is a part number and try to retrieve the part page URL.
+ * If no matches are found, assume the candidate is a part number and
+ * return the constructed part search URL.
  *
  * @param {string} candidate - The model or part number candidate.
  * @returns {Object} - An object with properties:
@@ -38,7 +38,7 @@ async function validateModelOrPart(candidate) {
       const candidateModels = Object.values(items);
       
       if (candidateModels.length === 1) {
-        // Valid model: build the model URL.
+        // Valid model found—build and return the model URL.
         const model = candidateModels[0];
         const modelUrl = buildModelUrl(model);
         return { type: "model", status: "valid", model, modelUrl };
@@ -52,20 +52,25 @@ async function validateModelOrPart(candidate) {
     return await getPartUrl(candidate);
   } catch (error) {
     console.error("Error in model validation:", error.response?.data || error);
-    return { type: "unknown", status: "not_found" };
+    // Treat errors as not found by assuming it is a part number.
+    return await getPartUrl(candidate);
   }
 }
 
 /**
  * Retrieve the part URL given a part number candidate.
- * This function calls the part search API URL and uses headers to mimic a browser.
+ * This function constructs the part URL using the candidate.
+ * It attempts to perform an axios GET to follow redirects, but if
+ * this fails or access is denied, it returns the constructed URL.
  *
  * @param {string} partCandidate - The candidate part number.
- * @returns {Object} - An object with type 'part' and a status and URL if found.
+ * @returns {Object} - An object with type 'part' and, on success, status 'valid' and { url }.
  */
 async function getPartUrl(partCandidate) {
+  // Construct the part URL endpoint using the candidate.
   const partUrlEndpoint = `https://www.partselect.com/api/search/?searchterm=${encodeURIComponent(partCandidate)}`;
   try {
+    // Attempt to follow redirects.
     const response = await axios.get(partUrlEndpoint, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -75,15 +80,15 @@ async function getPartUrl(partCandidate) {
       },
       maxRedirects: 5
     });
-    // Axios follows redirects by default.
     if (response.request && response.request.res && response.request.res.responseUrl) {
       return { type: "part", status: "valid", url: response.request.res.responseUrl };
     }
-    // If unable to retrieve the redirected URL, return the candidate itself.
-    return { type: "part", status: "valid", url: partCandidate };
+    // Fallback: return the constructed part URL.
+    return { type: "part", status: "valid", url: partUrlEndpoint };
   } catch (error) {
     console.error("Error fetching part URL:", error.response?.data || error);
-    return { type: "part", status: "not_found" };
+    // In case of error (e.g. Access Denied), return the constructed part URL.
+    return { type: "part", status: "valid", url: partUrlEndpoint };
   }
 }
 
