@@ -14,15 +14,17 @@ const axios = require("axios");
  *                    - For part: { url }
  */
 async function validateModelOrPart(candidate) {
-  // First try the model autocomplete API.
+  // First, try the model autocomplete API.
   const modelUrl = `https://www.partselect.com/api/Search/AutoCompleteModels?searchTerm=${encodeURIComponent(candidate)}&numResults=6`;
   try {
     const response = await axios.get(modelUrl);
     const data = response.data;
     const matches = data.matches;
     const items = data.items;
+    
     if (matches > 0 && items && Object.keys(items).length > 0) {
       const candidateModels = Object.values(items);
+      
       if (candidateModels.length === 1) {
         return { type: "model", status: "valid", model: candidateModels[0] };
       } else if (candidateModels.length > 1 && candidateModels.length < 5) {
@@ -31,18 +33,18 @@ async function validateModelOrPart(candidate) {
         return { type: "model", status: "too_many", options: candidateModels };
       }
     }
-    // If we have no matches for a model, we assume candidate might be a part number.
+    // If no model matches are found, assume the candidate might be a part number.
     return await getPartUrl(candidate);
   } catch (error) {
     console.error("Error in model validation:", error.response?.data || error);
-    // Treat errors as not found.
+    // If an error occurs, treat it as not found.
     return { type: "unknown", status: "not_found" };
   }
 }
 
 /**
  * Retrieve the part URL given a part number candidate.
- * This function calls the part search API URL.
+ * This function calls the part search API URL and follows redirects.
  *
  * @param {string} partCandidate - The candidate part number.
  * @returns {Object} - An object with type 'part' and a status and URL if found.
@@ -50,11 +52,20 @@ async function validateModelOrPart(candidate) {
 async function getPartUrl(partCandidate) {
   const url = `https://www.partselect.com/api/search/?searchterm=${encodeURIComponent(partCandidate)}`;
   try {
-    // By default axios follows redirects. After the request completes,
-    // we attempt to read the final URL from the underlying Node response.
-    const response = await axios.get(url);
-    // In many Node environments, axios attaches the final URL
-    // to response.request.res.responseUrl.
+    // Configure axios to mimic a browser by sending common headers.
+    const response = await axios.get(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                      "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                      "Chrome/115.0.0.0 Safari/537.36",
+        "Referer": "https://www.partselect.com/"
+      },
+      // Allow redirection to follow the final URL.
+      maxRedirects: 5
+    });
+
+    // In many cases, axios attaches the final URL after redirection to:
+    // response.request.res.responseUrl
     if (response.request && response.request.res && response.request.res.responseUrl) {
       return { type: "part", status: "valid", url: response.request.res.responseUrl };
     }
