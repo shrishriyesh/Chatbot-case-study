@@ -1,26 +1,35 @@
 // server/controllers/chatController.js
 const deepseekService = require('../services/deepseekService');
 const { parseDeepseekResponse } = require('../services/responseParser');
-const { validateModelNumber } = require('../services/productApiService');
+const { validateModelOrPart } = require('../services/productApiService');
 
-// Example handler functions for each scenario:
+// Placeholder handler for query-only responses.
+const handleQueryOnly = async (query) => {
+  return `Received your query: "${query}" without any product identifiers.`;
+};
+
+// Handlers for each scenario.
+const handleValidModel = async (model, query) => {
+  // Here you would normally scrape product details by constructing a model URL,
+  // then pass these details along with the query to a contextual Deepseek call.
+  return `Validated model: ${model}. Proceeding with your query: "${query}" using the model URL.`;
+};
+
 const handleAmbiguousModel = async (options) => {
-  // Here you might return a message listing the options and asking the user to specify.
-  return `We found several matches for the model number. Did you mean: ${options.join(", ")}?`;
+  return `Multiple possible models found: ${options.join(", ")}. Please clarify your model number.`;
 };
 
 const handleTooManyMatches = async () => {
-  return "We found too many matches. Please provide a more specific model number.";
+  return "Too many model matches found. Please provide a more specific model number.";
+};
+
+const handlePartValid = async (url, query) => {
+  // Use the part URL (from the part search API) along with the query.
+  return `Validated part found at: ${url}. Proceeding with your query: "${query}" using the part details.`;
 };
 
 const handleNotFound = async () => {
-  return "No matching model was found. Please check your model number and try again.";
-};
-
-const handleValidModel = async (modelNumber, query) => {
-  // Proceed with the flow: validate further, scrape data, etc.
-  // For demonstration, simply return a confirmation:
-  return `Validated model: ${modelNumber}. Proceeding with your query: "${query}"`;
+  return "No valid model or part number was found. Please check your input.";
 };
 
 exports.handleChatMessage = async (req, res) => {
@@ -28,36 +37,40 @@ exports.handleChatMessage = async (req, res) => {
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: "No message provided." });
     
-    // 1. Get structured response from Deepseek.
+    // Get structured response from Deepseek.
     const deepseekRawResponse = await deepseekService.getDeepseekResponse(message);
     
-    // 2. Parse the structured response.
+    // Parse the Deepseek response into two parts.
     const { modelNumber, query } = parseDeepseekResponse(deepseekRawResponse);
     
-    // 3. Depending on whether a model number was detected, validate it.
     let finalResponse = "";
     
+    // If we got a candidate (modelNumber from Deepseek is not "NONE")
     if (modelNumber !== "NONE") {
-      const validationResult = await validateModelNumber(modelNumber);
-      switch (validationResult.status) {
-        case "valid":
-          finalResponse = await handleValidModel(validationResult.model, query);
-          break;
-        case "ambiguous":
-          finalResponse = await handleAmbiguousModel(validationResult.options);
-          break;
-        case "too_many":
+      const validation = await validateModelOrPart(modelNumber);
+      if (validation.type === "model") {
+        // Handle based on the status of model validation.
+        if (validation.status === "valid") {
+          finalResponse = await handleValidModel(validation.model, query);
+        } else if (validation.status === "ambiguous") {
+          finalResponse = await handleAmbiguousModel(validation.options);
+        } else if (validation.status === "too_many") {
           finalResponse = await handleTooManyMatches();
-          break;
-        case "not_found":
-        default:
+        } else {
           finalResponse = await handleNotFound();
+        }
+      } else if (validation.type === "part") {
+        if (validation.status === "valid") {
+          finalResponse = await handlePartValid(validation.url, query);
+        } else {
+          finalResponse = await handleNotFound();
+        }
       }
     } else if (query !== "NONE") {
-      // If no model number was found, handle only the query.
-      finalResponse = await handleQueryOnly(query); // You may already have a function for queries.
+      // If no product identifier was parsed but a query exists.
+      finalResponse = await handleQueryOnly(query);
     } else {
-      finalResponse = "Please provide a valid model number or describe your issue.";
+      finalResponse = "Please provide a valid model or part number, or ask your question clearly.";
     }
     
     res.json({ response: finalResponse });
