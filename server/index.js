@@ -1,8 +1,10 @@
 // server/index.js
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') }); // Loads environment variables from .env file
+console.log("API KEY from .env is:", process.env.DEEPSEEK_API_KEY);
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-require('dotenv').config();  // Loads environment variables from .env file
 
 const chatRoutes = require('./routes/chat');
 
