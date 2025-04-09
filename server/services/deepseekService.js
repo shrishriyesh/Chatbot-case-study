@@ -1,28 +1,35 @@
 // server/services/deepseekService.js
 
-// If you are using CommonJS, require the default export:
 const OpenAI = require("openai").default;
 
 const openai = new OpenAI({
   baseURL: "https://api.deepseek.com",  // Deepseek API base URL
-  apiKey: process.env.DEEPSEEK_API_KEY,  // Your API key loaded from .env
+  apiKey: process.env.DEEPSEEK_API_KEY,   // API key from .env
 });
 
 exports.getDeepseekResponse = async (userMessage) => {
   try {
+    // Our new system prompt instructs the LLM to output two lines: one for model number and one for query.
+    const systemInstruction = 
+      "You are a helpful assistant for PartSelect. " +
+      "Analyze the user's message and output exactly two lines in the following format:\n" +
+      "MODEL_NUMBER::<model> (if no model is found, output MODEL_NUMBER::NONE)\n" +
+      "QUERY::<query> (if no query is found, output QUERY::NONE)\n" +
+      "Do not include any extra text.";
+      
     // Call the Deepseek API using the chat completions endpoint.
-    // Note: The model name should match what Deepseek expects; based on the documentation it's "deepseek-chat".
     const completion = await openai.chat.completions.create({
-      model: "deepseek-chat",
+      model: "deepseek-chat",  // Ensure this matches the model supported by Deepseek
       messages: [
-        { role: "system", content: "You are a helpful assistant." },
+        { role: "system", content: systemInstruction },
         { role: "user", content: userMessage },
       ],
     });
-    // Return the assistant's reply (assuming the response format is similar to OpenAI's)
+    
+    // Return the Deepseek response text
     return completion.choices[0].message.content;
+    
   } catch (error) {
-    // Log the detailed error from Deepseek for debugging purposes
     console.error("Deepseek API error:", error.response?.data || error);
     throw new Error("Failed to retrieve response from Deepseek");
   }
