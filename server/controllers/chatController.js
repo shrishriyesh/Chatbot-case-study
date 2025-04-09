@@ -3,33 +3,32 @@ const deepseekService = require('../services/deepseekService');
 const { parseDeepseekResponse } = require('../services/responseParser');
 const { validateModelOrPart } = require('../services/productApiService');
 
-// Placeholder handler for query-only responses.
-const handleQueryOnly = async (query) => {
-  return `Received your query: "${query}" without any product identifiers.`;
-};
-
-// Handlers for each scenario.
+// Handlers for different cases:
 const handleValidModel = async (model, query) => {
-  // Here you would normally scrape product details by constructing a model URL,
-  // then pass these details along with the query to a contextual Deepseek call.
-  return `Validated model: ${model}. Proceeding with your query: "${query}" using the model URL.`;
+  // In a valid model scenario, use the product identifier (model) with the query.
+  return await deepseekService.getFinalResponseForProduct(model, query);
 };
 
 const handleAmbiguousModel = async (options) => {
-  return `Multiple possible models found: ${options.join(", ")}. Please clarify your model number.`;
+  return `Multiple possible models found: ${options.join(", ")}. Please specify which one is yours.`;
 };
 
 const handleTooManyMatches = async () => {
-  return "Too many model matches found. Please provide a more specific model number.";
+  return "Too many model matches found. Please provide a more specific model or serial number.";
 };
 
-const handlePartValid = async (url, query) => {
-  // Use the part URL (from the part search API) along with the query.
-  return `Validated part found at: ${url}. Proceeding with your query: "${query}" using the part details.`;
+const handlePartValid = async (productIdentifier, query) => {
+  // Use the part product identifier (which might be a URL or part number) with the query.
+  return await deepseekService.getFinalResponseForProduct(productIdentifier, query);
+};
+
+const handleQueryOnly = async (query) => {
+  // If no product identifier is found, simply handle the query.
+  return `Here's the answer to your query: "${query}" (No product identifier was provided.)`;
 };
 
 const handleNotFound = async () => {
-  return "No valid model or part number was found. Please check your input.";
+  return "No valid model or part number was found. Please check your input and try again.";
 };
 
 exports.handleChatMessage = async (req, res) => {
@@ -37,19 +36,16 @@ exports.handleChatMessage = async (req, res) => {
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: "No message provided." });
     
-    // Get structured response from Deepseek.
+    // 1. Get structured response from Deepseek.
     const deepseekRawResponse = await deepseekService.getDeepseekResponse(message);
     
-    // Parse the Deepseek response into two parts.
+    // 2. Parse the Deepseek response.
     const { modelNumber, query } = parseDeepseekResponse(deepseekRawResponse);
     
     let finalResponse = "";
-    
-    // If we got a candidate (modelNumber from Deepseek is not "NONE")
     if (modelNumber !== "NONE") {
       const validation = await validateModelOrPart(modelNumber);
       if (validation.type === "model") {
-        // Handle based on the status of model validation.
         if (validation.status === "valid") {
           finalResponse = await handleValidModel(validation.model, query);
         } else if (validation.status === "ambiguous") {
@@ -67,10 +63,9 @@ exports.handleChatMessage = async (req, res) => {
         }
       }
     } else if (query !== "NONE") {
-      // If no product identifier was parsed but a query exists.
       finalResponse = await handleQueryOnly(query);
     } else {
-      finalResponse = "Please provide a valid model or part number, or ask your question clearly.";
+      finalResponse = "Please provide a valid model, part number, or describe your issue.";
     }
     
     res.json({ response: finalResponse });
